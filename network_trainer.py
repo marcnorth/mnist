@@ -1,28 +1,58 @@
 import numpy as np
+from helpers import sigmoid_prime
+
+
+class QuadraticCost:
+  
+  @staticmethod
+  def cost(output, expected_output):
+    return 0.5 * np.linalg.norm(output - expected_output)**2
+  
+  @staticmethod
+  def output_layer_error(output, expected_output, output_layer_weighted_input):
+    return (output - expected_output) * sigmoid_prime(output_layer_weighted_input)
+
+
+class CrossEntropyCost:
+  
+  @staticmethod
+  def cost(output, expected_output):
+    return np.sum(expected_output * np.log(output) + (1-expected_output) * np.log(1 - output))
+  
+  @staticmethod
+  def output_layer_error(output, expected_output, output_layer_weighted_input):
+    return output - expected_output
+
 
 class NeuralNetworkTrainer:
   
   reporter = lambda self, text : None
   
-  def __init__(self, network):
+  def __init__(self, network, cost=CrossEntropyCost):
     self.rng = np.random.default_rng()
     self.network = network
+    self.cost = cost
   
-  def train(self, training_data, mini_batch_size, number_of_epochs, learning_rate):
+  def train(self, training_data, mini_batch_size, number_of_epochs, learning_rate, weight_decay=0, validation_data=None, epochs_per_validation=1):
+    if validation_data is not None:
+      self.validate(-1, validation_data)
     for epoch_number in range(number_of_epochs):
       self.reporter("Epoch: {0}/{1}".format(epoch_number+1, number_of_epochs))
-      self.run_epoch(training_data[:], mini_batch_size, learning_rate)
+      self.run_epoch(training_data[:], mini_batch_size, learning_rate, weight_decay)
+      if validation_data is not None and (epoch_number + 1) % epochs_per_validation == 0:
+        self.validate(epoch_number, validation_data)
   
-  def run_epoch(self, training_data, mini_batch_size, learning_rate):
+  def run_epoch(self, training_data, mini_batch_size, learning_rate, weight_decay=0):
     training_list = list(training_data)
     self.rng.shuffle(training_list)
     training_data = tuple(training_list)
+    weight_decay_rate = 1 - learning_rate * weight_decay / len(training_data)
     mini_batch_start_index = 0
     while mini_batch_start_index < len(training_data):
-      self.run_mini_batch(training_data[mini_batch_start_index:mini_batch_start_index+mini_batch_size], learning_rate)
+      self.run_mini_batch(training_data[mini_batch_start_index:mini_batch_start_index+mini_batch_size], learning_rate, weight_decay_rate)
       mini_batch_start_index += mini_batch_size
   
-  def run_mini_batch(self, mini_batch_training_data, learning_rate):
+  def run_mini_batch(self, mini_batch_training_data, learning_rate, weight_decay_rate=1):
     batch_size = len(mini_batch_training_data)
     sum_of_weights_gradients = [np.zeros(weights.shape) for weights in self.network.weights]
     sum_of_biases_gradients = [np.zeros(biases.shape) for biases in self.network.biases]
@@ -32,7 +62,7 @@ class NeuralNetworkTrainer:
       sum_of_biases_gradients = [ sum + new_values for sum, new_values in zip(sum_of_biases_gradients, biases_gradient) ]
     change_to_weights = [-weights/batch_size * learning_rate for weights in sum_of_weights_gradients]
     change_to_biases = [-biases/batch_size * learning_rate for biases in sum_of_biases_gradients]
-    self.network.update_weights_and_biases(change_to_weights, change_to_biases)
+    self.network.update_weights_and_biases(change_to_weights, change_to_biases, weight_decay_rate)
   
   def backpropagate(self, input, expected_output):
     weights_gradients = [np.zeros(weights.shape) for weights in self.network.weights]
@@ -47,7 +77,7 @@ class NeuralNetworkTrainer:
       activations.append(activation)
       layer_input = activation
     # Calculate gradients for output layer
-    layer_errors = self.cost_derivative(activations[-1], expected_output) * self.network.activation_derivative(weighted_inputs[-1])
+    layer_errors = self.cost.output_layer_error(activations[-1], expected_output, weighted_inputs[-1])
     # Go through layers backwards
     for layer in range(len(weights_gradients)-1, -1, -1):
       weights_gradients[layer] = np.outer(layer_errors, activations[layer].transpose())
@@ -56,8 +86,9 @@ class NeuralNetworkTrainer:
         layer_errors = np.array(self.network.weights[layer]).transpose().dot(np.array(layer_errors)) * self.network.activation_derivative(weighted_inputs[layer-1])
     return weights_gradients, biases_gradients
   
-  def cost_derivative(self, output, expected_output):
-    return output - expected_output
+  def validate(self, epoch_number, validation_data):
+    correct_count = self.test(validation_data)
+    self.reporter("After {0} epoch(s): {1}/{2}".format(epoch_number+1, correct_count, len(validation_data)))
   
   def test(self, test_data):
     correct_count = 0
