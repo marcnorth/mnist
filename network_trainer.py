@@ -32,29 +32,34 @@ class NeuralNetworkTrainer:
     self.rng = np.random.default_rng()
     self.network = network
     self.cost = cost
-    self.best_score = 0
   
   def train(self, training_data, mini_batch_size,
     learning_rate,
+    learning_rate_decay=1,
     weight_decay=0,
     validation_data=None,
     max_number_of_epochs=None,
     epochs_per_validation=1,
     max_epochs_since_improvement=None
   ):
-    if validation_data is not None:
-      self.validate(-1, validation_data)
-    self.best_score = 0
-    self.epochs_since_improvement = 0
-    self.epochs_per_validation = epochs_per_validation
+    best_score = 0
+    epochs_since_improvement = 0
     epoch_number = 0
     while True:
       epoch_number += 1
       self.reporter("Epoch: {0}{1}".format(epoch_number, "/"+str(max_number_of_epochs) if max_number_of_epochs is not None else ""))
       self.run_epoch(training_data[:], mini_batch_size, learning_rate, weight_decay)
       if validation_data is not None and (epoch_number) % epochs_per_validation == 0:
-        self.validate(epoch_number, validation_data)
-        if max_epochs_since_improvement is not None and max_epochs_since_improvement <= self.epochs_since_improvement:
+        correct_count = self.validate(validation_data)
+        self.reporter("After {0} epoch(s): {1}/{2}".format(epoch_number, correct_count, len(validation_data)))
+        if correct_count > best_score:
+          best_score = correct_count
+          epochs_since_improvement = 0
+        else:
+          epochs_since_improvement += epochs_per_validation
+          learning_rate *= learning_rate_decay
+          self.reporter("No improvements for {0} epoch(s)".format(epochs_since_improvement))
+        if max_epochs_since_improvement is not None and max_epochs_since_improvement <= epochs_since_improvement:
           break
       if max_number_of_epochs is not None and epoch_number >= max_number_of_epochs:
         break
@@ -103,15 +108,8 @@ class NeuralNetworkTrainer:
         layer_errors = np.array(self.network.weights[layer]).transpose().dot(np.array(layer_errors)) * self.network.activation_derivative(weighted_inputs[layer-1])
     return weights_gradients, biases_gradients
   
-  def validate(self, epoch_number, validation_data):
-    correct_count = self.test(validation_data)
-    self.reporter("After {0} epoch(s): {1}/{2}".format(epoch_number+1, correct_count, len(validation_data)))
-    if correct_count > self.best_score:
-      self.best_score = correct_count
-      self.epochs_since_improvement = 0
-    else:
-      self.epochs_since_improvement += self.epochs_per_validation
-      self.reporter("No improvements for {0} epoch(s)".format(self.epochs_since_improvement))
+  def validate(self, validation_data):
+    return self.test(validation_data)
   
   def test(self, test_data):
     correct_count = 0

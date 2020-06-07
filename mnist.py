@@ -18,6 +18,7 @@ trainer.train(
   mini_batch_size=30,
   max_number_of_epochs=None,
   learning_rate=0.5,
+  learning_rate_decay=0.5,
   weight_decay=5.0,
   validation_data=validation_data,
   epochs_per_validation=1,
