@@ -16,11 +16,12 @@ test_data = loader.get_test_data().get_zipped_data()
 trainer.train(
   training_data,
   mini_batch_size=30,
-  number_of_epochs=10,
-  learning_rate=3.0,
+  max_number_of_epochs=None,
+  learning_rate=0.5,
   weight_decay=5.0,
   validation_data=validation_data,
-  epochs_per_validation=1
+  epochs_per_validation=1,
+  max_epochs_since_improvement=10
 )
 
 print("{0}/{1}".format(trainer.test(test_data), len(test_data)))
